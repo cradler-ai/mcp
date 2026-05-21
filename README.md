@@ -61,7 +61,7 @@ the built file directly:
   "mcpServers": {
     "cradler": {
       "command": "node",
-      "args": ["/absolute/path/to/cradler-db-service/mcp/dist/index.js"],
+      "args": ["/absolute/path/to/cradler-mcp/dist/index.js"],
       "env": {
         "CRADLER_API_URL": "https://gateway.cradler.ai",
         "CRADLER_PROJECT_ID": "your-project-slug",

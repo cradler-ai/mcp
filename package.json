@@ -1,6 +1,6 @@
 {
   "name": "@cradler/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server that lets AI agents read and write a Cradler project's data",
   "license": "MIT",
   "type": "module",
@@ -26,6 +26,8 @@
     "zod": "^4.4.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
