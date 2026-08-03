@@ -93,7 +93,10 @@ async function guard(run: () => Promise<unknown>) {
     return ok(await run())
   } catch (err) {
     if (err instanceof CradlerError) {
-      return fail(`Cradler error [${err.code}]: ${err.message}`)
+      // The request id is what makes a failure findable in the gateway's log,
+      // so pass it through rather than making the user reproduce the problem.
+      const trace = err.requestId ? ` (request ${err.requestId})` : ''
+      return fail(`Cradler error [${err.code}]: ${err.message}${trace}`)
     }
     return fail(`Unexpected error: ${(err as Error).message}`)
   }
@@ -130,7 +133,9 @@ async function main(): Promise<void> {
       description:
         'Read rows from a Cradler collection with optional filtering, ' +
         'sorting, column projection and paging. Defaults to a limit of 100 ' +
-        'rows so large tables are not pulled in full.',
+        'rows so large tables are not pulled in full. `count` in the result ' +
+        'is the size of the page returned, NOT how many rows matched — to ' +
+        'answer "how many are there", pass countTotal: true and read `total`.',
       inputSchema: {
         collection: z.string().describe('Name of the collection to read.'),
         filters: z
@@ -157,9 +162,18 @@ async function main(): Promise<void> {
           .nonnegative()
           .optional()
           .describe('Number of rows to skip, for paging.'),
+        countTotal: z
+          .boolean()
+          .optional()
+          .describe(
+            'Also return `total`: how many rows match the filters overall, ' +
+              'ignoring limit/offset. Use this to answer "how many" ' +
+              'questions — `count` only ever reports the page size. Costs an ' +
+              'extra counting pass, so leave it off when paging through data.',
+          ),
       },
     },
-    ({ collection, filters, order, select, limit, offset }) =>
+    ({ collection, filters, order, select, limit, offset, countTotal }) =>
       guard(() =>
         cradler.query(collection, {
           filters,
@@ -167,6 +181,7 @@ async function main(): Promise<void> {
           select,
           limit: limit ?? 100,
           offset,
+          count: countTotal ? 'exact' : undefined,
         }),
       ),
   )
