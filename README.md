@@ -89,10 +89,12 @@ the built file directly:
 
 `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is_null`.
 
-For `in`, `value` is an array; for `is_null`, `value` is a boolean.
+For `in`, `value` is an array; for `is_null`, `value` is a boolean. Every
+other operator requires a `value` — a filter without one is rejected rather
+than silently matching nulls.
 
-`query` defaults to a `limit` of 100 rows so large tables are not pulled in
-full. `update` and `delete` require a non-empty `filters` array — there is no
+`query` defaults to a `limit` of 100 rows (maximum 1000) so large tables are
+not pulled in full. `update` and `delete` require a non-empty `filters` array — there is no
 way to update or delete an entire collection in one call.
 
 ## Development

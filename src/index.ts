@@ -15,7 +15,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { CradlerClient, CradlerError } from './cradler.js'
+import { CradlerClient, CradlerError, describeError } from './cradler.js'
 
 /** Read and validate the three required environment variables. */
 function loadConfig(): { url: string; projectId: string; apiKey: string } {
@@ -93,10 +93,9 @@ async function guard(run: () => Promise<unknown>) {
     return ok(await run())
   } catch (err) {
     if (err instanceof CradlerError) {
-      // The request id is what makes a failure findable in the gateway's log,
-      // so pass it through rather than making the user reproduce the problem.
-      const trace = err.requestId ? ` (request ${err.requestId})` : ''
-      return fail(`Cradler error [${err.code}]: ${err.message}${trace}`)
+      // Includes the gateway's per-field validation detail and the request
+      // id (what makes a failure findable in the gateway's log).
+      return fail(describeError(err))
     }
     return fail(`Unexpected error: ${(err as Error).message}`)
   }
@@ -108,7 +107,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: 'cradler-mcp',
-    version: '0.1.0',
+    version: '0.2.1',
   })
 
   server.registerTool(
@@ -154,8 +153,9 @@ async function main(): Promise<void> {
           .number()
           .int()
           .positive()
+          .max(1000)
           .optional()
-          .describe('Maximum rows to return. Defaults to 100.'),
+          .describe('Maximum rows to return (1–1000). Defaults to 100.'),
         offset: z
           .number()
           .int()

@@ -69,18 +69,23 @@ export class CradlerError extends Error {
   /** The gateway's id for this request. It appears in the server-side log
    *  too, so quoting it is what makes a reported failure findable. */
   readonly requestId?: string
+  /** Structured detail — for `invalid_request`, the per-field validation
+   *  errors that say which argument was wrong and why. */
+  readonly details?: unknown
 
   constructor(
     status: number,
     code: string,
     message: string,
     requestId?: string,
+    details?: unknown,
   ) {
     super(message)
     this.name = 'CradlerError'
     this.code = code
     this.status = status
     this.requestId = requestId
+    this.details = details
     Object.setPrototypeOf(this, CradlerError.prototype)
   }
 }
@@ -111,7 +116,8 @@ export class CradlerClient {
   }
 
   /** `POST /{collection}/query` — read rows with filters / order / paging. */
-  query(collection: string, args: QueryArgs): Promise<ResultSet> {
+  async query(collection: string, args: QueryArgs): Promise<ResultSet> {
+    checkFilters(args.filters ?? [])
     return this.request<ResultSet>('POST', `/${enc(collection)}/query`, {
       select: args.select,
       filters: args.filters ?? [],
@@ -128,11 +134,12 @@ export class CradlerClient {
   }
 
   /** `POST /{collection}/update` — patch all rows matching the filters. */
-  update(
+  async update(
     collection: string,
     patch: Row,
     filters: Filter[],
   ): Promise<ResultSet> {
+    checkFilters(filters)
     return this.request<ResultSet>('POST', `/${enc(collection)}/update`, {
       patch,
       filters,
@@ -140,7 +147,8 @@ export class CradlerClient {
   }
 
   /** `POST /{collection}/delete` — delete all rows matching the filters. */
-  delete(collection: string, filters: Filter[]): Promise<ResultSet> {
+  async delete(collection: string, filters: Filter[]): Promise<ResultSet> {
+    checkFilters(filters)
     return this.request<ResultSet>('POST', `/${enc(collection)}/delete`, {
       filters,
     })
@@ -193,6 +201,7 @@ export class CradlerClient {
           error.code,
           error.message,
           typeof error.request_id === 'string' ? error.request_id : undefined,
+          error.details,
         )
       }
       throw new CradlerError(
@@ -206,13 +215,60 @@ export class CradlerClient {
   }
 }
 
+/**
+ * Refuse a comparison filter with no `value`. The gateway reads a missing
+ * value as null, so `{op: 'neq', field: 'status'}` would quietly become
+ * `status IS NOT NULL` — on `delete`, every row that has any status at all.
+ * Only `is_null` may omit it.
+ */
+function checkFilters(filters: Filter[]): void {
+  for (const f of filters) {
+    if (f.op !== 'is_null' && f.value === undefined) {
+      throw new CradlerError(
+        0,
+        'invalid_filter',
+        `filter on '${f.field}' with op '${f.op}' has no value. Every op ` +
+          `except is_null needs one; to match nulls use ` +
+          `{op: 'is_null', value: true} (or value: false for not-null).`,
+      )
+    }
+  }
+}
+
+/**
+ * One line an agent can act on. For a request the gateway rejected as
+ * malformed, the top-level message is only "request body failed validation";
+ * the field and the reason are in `details`, so spell those out.
+ */
+export function describeError(err: CradlerError): string {
+  let text = `Cradler error [${err.code}]: ${err.message}`
+  if (Array.isArray(err.details) && err.details.length > 0) {
+    const parts = err.details.slice(0, 5).map((d) => {
+      const item = (d ?? {}) as { loc?: unknown; msg?: unknown }
+      const loc = Array.isArray(item.loc)
+        ? item.loc.filter((p) => p !== 'body').join('.')
+        : ''
+      const msg = typeof item.msg === 'string' ? item.msg : JSON.stringify(d)
+      return loc ? `${loc}: ${msg}` : msg
+    })
+    text += ` — ${parts.join('; ')}`
+  }
+  if (err.requestId) text += ` (request ${err.requestId})`
+  return text
+}
+
 function enc(collection: string): string {
   return encodeURIComponent(collection)
 }
 
 function isErrorBody(
   v: unknown,
-): v is { code: string; message: string; request_id?: string } {
+): v is {
+  code: string
+  message: string
+  request_id?: string
+  details?: unknown
+} {
   if (typeof v !== 'object' || v === null) return false
   const obj = v as Record<string, unknown>
   return typeof obj.code === 'string' && typeof obj.message === 'string'

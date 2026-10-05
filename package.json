@@ -1,6 +1,6 @@
 {
   "name": "@cradler/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server that lets AI agents read and write a Cradler project's data",
   "license": "MIT",
   "type": "module",

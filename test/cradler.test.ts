@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { CradlerClient, CradlerError } from '../src/cradler'
+import { CradlerClient, CradlerError, describeError } from '../src/cradler'
 
 type Captured = { url: string; init: RequestInit }
 
@@ -152,5 +152,67 @@ describe('writes', () => {
     const body = bodyOf(calls[0])
     assert.deepEqual(body.patch, { name: 'x' })
     assert.equal((body.filters as unknown[]).length, 1)
+  })
+})
+
+describe('filters without a value', () => {
+  // The gateway reads a missing value as null: `neq` with no value used to
+  // become `IS NOT NULL`, so a delete removed every row with any value.
+  it('are refused before anything is sent', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await assert.rejects(
+      () => client().delete('posts', [{ field: 'status', op: 'neq' }]),
+      (e: CradlerError) => e.code === 'invalid_filter',
+    )
+    await assert.rejects(
+      () => client().update('posts', { a: 1 }, [{ field: 'owner', op: 'eq' }]),
+      (e: CradlerError) => e.code === 'invalid_filter',
+    )
+    await assert.rejects(
+      () => client().query('posts', { filters: [{ field: 'x', op: 'gt' }] }),
+      (e: CradlerError) => e.code === 'invalid_filter',
+    )
+    assert.equal(calls.length, 0)
+  })
+
+  it('are still allowed for is_null', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await client().query('posts', { filters: [{ field: 'x', op: 'is_null' }] })
+    assert.equal(calls.length, 1)
+  })
+})
+
+describe('validation errors', () => {
+  it('tell the agent which argument was wrong', async () => {
+    // The gateway's top-level message for a malformed body is only "request
+    // body failed validation"; the field and reason live in `details` and
+    // used to be dropped, leaving the agent nothing to correct.
+    stub({
+      status: 422,
+      body: {
+        error: {
+          code: 'invalid_request',
+          message: 'request body failed validation',
+          request_id: 'r9',
+          details: [
+            {
+              type: 'less_than_equal',
+              loc: ['body', 'limit'],
+              msg: 'Input should be less than or equal to 1000',
+              input: 5000,
+            },
+          ],
+        },
+      },
+    })
+    const err = await client()
+      .query('users', { limit: 5000 })
+      .catch((e: CradlerError) => e)
+    assert.ok(err instanceof CradlerError)
+    assert.equal(
+      describeError(err),
+      'Cradler error [invalid_request]: request body failed validation — ' +
+        'limit: Input should be less than or equal to 1000 (request r9)',
+    )
   })
 })
