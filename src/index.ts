@@ -107,7 +107,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: 'cradler-mcp',
-    version: '0.3.0',
+    version: '0.4.0',
   })
 
   server.registerTool(
@@ -308,9 +308,54 @@ async function main(): Promise<void> {
           .array(z.record(z.string(), z.unknown()))
           .min(1)
           .describe('Array of row objects to insert.'),
+        unique: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Fields that must not repeat across rows (together, if several). ' +
+              'The first insert naming them makes them unique for good; a ' +
+              'duplicate then fails with constraint_violation (409).',
+          ),
       },
     },
-    ({ collection, rows }) => guard(() => cradler.insert(collection, rows)),
+    ({ collection, rows, unique }) =>
+      guard(() => cradler.insert(collection, rows, unique)),
+  )
+
+  server.registerTool(
+    'upsert',
+    {
+      title: 'Upsert rows',
+      description:
+        'Insert each row, or update the stored row that has the same ' +
+        '`onConflict` values (default ["id"]). A row updates only the fields ' +
+        'it includes. The first upsert on a field makes it unique in the ' +
+        'collection; if the collection already holds duplicates of it, the ' +
+        'call fails with constraint_violation and says how many. Use this ' +
+        'instead of query-then-insert, which races.',
+      inputSchema: {
+        collection: z.string().describe('Name of the collection.'),
+        rows: z
+          .array(z.record(z.string(), z.unknown()))
+          .min(1)
+          .describe(
+            'Row objects. Each must have a value for every onConflict field.',
+          ),
+        onConflict: z
+          .array(z.string())
+          .optional()
+          .describe('Fields that identify a row. Defaults to ["id"].'),
+        ignoreDuplicates: z
+          .boolean()
+          .optional()
+          .describe(
+            'Keep a stored row unchanged (it is still returned) instead of ' +
+              'updating it — "insert unless it already exists".',
+          ),
+      },
+    },
+    ({ collection, rows, onConflict, ignoreDuplicates }) =>
+      guard(() => cradler.upsert(collection, rows, onConflict, ignoreDuplicates)),
   )
 
   server.registerTool(

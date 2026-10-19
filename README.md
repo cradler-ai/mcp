@@ -4,9 +4,9 @@ An [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server that
 lets AI agents — Claude Desktop, Cursor, Claude Code, and any other MCP client —
 read and write the data in a single [Cradler](https://cradler.ai) project.
 
-It runs over **stdio** and exposes seven tools backed by the Cradler data
+It runs over **stdio** and exposes eight tools backed by the Cradler data
 gateway: `list_collections`, `get_schema`, `query`, `aggregate`, `insert`,
-`update` and `delete`.
+`upsert`, `update` and `delete`.
 
 ## Configuration
 
@@ -82,6 +82,7 @@ the built file directly:
 | `query`            | Read rows with optional filters, sorting, column projection and paging.         |
 | `aggregate`        | count / sum / avg / min / max over every matching row, optionally grouped.      |
 | `insert`           | Insert one or more rows. New collections and columns are created automatically. |
+| `upsert`           | Insert, or update the row with the same `onConflict` values (default `id`).     |
 | `update`           | Patch every row matching the given filters (filters required).                  |
 | `delete`           | Delete every row matching the given filters (filters required — never the lot). |
 
@@ -95,6 +96,12 @@ the built file directly:
 For `in`, `value` is an array; for `is_null`, `value` is a boolean. Every
 other operator requires a `value` — a filter without one is rejected rather
 than silently matching nulls.
+
+A comparison never matches a row where the field is `null` — use `is_null`
+for that. A field that has never been written to the collection is null on
+every row: filters on it match nothing (on `update` / `delete` too, so they
+change nothing), `is_null: true` on it is refused for `update` / `delete`,
+and the result carries a `warnings` entry naming the field.
 
 `query` defaults to a `limit` of 100 rows (maximum 1000) so large tables are
 not pulled in full. Because of that cap, never compute a statistic from
@@ -121,6 +128,17 @@ aggregated.
 
 `update` and `delete` require a non-empty `filters` array — there is no way
 to update or delete an entire collection in one call.
+
+### Unique fields
+
+`upsert` matches stored rows on `onConflict` (default `["id"]`) and updates
+only the fields each row includes; `ignoreDuplicates: true` keeps a stored
+row unchanged and returns it. `insert` takes an optional `unique` list. The
+first call naming a field makes it unique in the collection permanently —
+later duplicate inserts fail with `constraint_violation` — so name only
+fields that must never repeat. If existing rows already repeat the value,
+the call fails and says how many. Only a `service` key can make a field
+unique.
 
 ## Development
 

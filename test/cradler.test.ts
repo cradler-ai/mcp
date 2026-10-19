@@ -262,3 +262,28 @@ describe('listCollections', () => {
     assert.equal(result.collections[0].collection, 'orders')
   })
 })
+
+describe('upsert', () => {
+  it('posts rows with the conflict fields', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await client().upsert('users', [{ email: 'a' }], ['email'], true)
+    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/users/upsert')
+    assert.deepEqual(bodyOf(calls[0]), {
+      rows: [{ email: 'a' }],
+      on_conflict: ['email'],
+      ignore_duplicates: true,
+    })
+  })
+
+  it('omits on_conflict so the gateway defaults to id', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await client().upsert('users', [{ id: 'x' }])
+    assert.deepEqual(bodyOf(calls[0]), { rows: [{ id: 'x' }] })
+  })
+
+  it('declares unique fields on insert as a query parameter', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await client().insert('users', [{ email: 'a' }], ['email'])
+    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/users?unique=email')
+  })
+})

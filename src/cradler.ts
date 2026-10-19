@@ -170,9 +170,28 @@ export class CradlerClient {
     })
   }
 
-  /** `POST /{collection}` — insert one or more rows. */
-  insert(collection: string, rows: Row[]): Promise<ResultSet> {
-    return this.request<ResultSet>('POST', `/${enc(collection)}`, rows)
+  /** `POST /{collection}` — insert one or more rows. `unique` fields are
+   *  made unique in the collection (first use), so duplicates get a 409. */
+  insert(collection: string, rows: Row[], unique?: string[]): Promise<ResultSet> {
+    const query = unique?.length
+      ? `?unique=${encodeURIComponent(unique.join(','))}`
+      : ''
+    return this.request<ResultSet>('POST', `/${enc(collection)}${query}`, rows)
+  }
+
+  /** `POST /{collection}/upsert` — insert, or update the stored row with the
+   *  same `onConflict` values (default `id`). */
+  upsert(
+    collection: string,
+    rows: Row[],
+    onConflict?: string[],
+    ignoreDuplicates?: boolean,
+  ): Promise<ResultSet> {
+    return this.request<ResultSet>('POST', `/${enc(collection)}/upsert`, {
+      rows,
+      ...(onConflict?.length ? { on_conflict: onConflict } : {}),
+      ...(ignoreDuplicates ? { ignore_duplicates: true } : {}),
+    })
   }
 
   /** `POST /{collection}/update` — patch all rows matching the filters. */
