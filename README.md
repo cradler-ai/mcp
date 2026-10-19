@@ -133,12 +133,17 @@ to update or delete an entire collection in one call.
 
 `upsert` matches stored rows on `onConflict` (default `["id"]`) and updates
 only the fields each row includes; `ignoreDuplicates: true` keeps a stored
-row unchanged and returns it. `insert` takes an optional `unique` list. The
-first call naming a field makes it unique in the collection permanently —
-later duplicate inserts fail with `constraint_violation` — so name only
-fields that must never repeat. If existing rows already repeat the value,
-the call fails and says how many. Only a `service` key can make a field
-unique.
+row unchanged and returns it. `insert` takes an optional `unique` list, and a
+duplicate of those fields fails with `constraint_violation`.
+
+Both need the fields to be unique in the collection already (`id` always
+is). **The MCP tools never make a field unique on their own**, unlike the
+SDK: doing so is permanent — every later duplicate insert fails, the app's
+own included — and an agent working on live data could pin a field that is
+meant to repeat. To create it, pass `createUnique: true`, and only for
+values that must never repeat (emails, external ids, idempotency keys). If
+existing rows already repeat the value, the call fails and says how many.
+Only a `service` key can make a field unique.
 
 ## Development
 

@@ -272,18 +272,31 @@ describe('upsert', () => {
       rows: [{ email: 'a' }],
       on_conflict: ['email'],
       ignore_duplicates: true,
+      create_unique: false,
     })
   })
 
   it('omits on_conflict so the gateway defaults to id', async () => {
     const calls = stub({ body: { rows: [], count: 0 } })
     await client().upsert('users', [{ id: 'x' }])
-    assert.deepEqual(bodyOf(calls[0]), { rows: [{ id: 'x' }] })
+    assert.deepEqual(bodyOf(calls[0]), { rows: [{ id: 'x' }], create_unique: false })
+  })
+
+  it('never creates uniqueness unless the agent opts in', async () => {
+    // An agent on live data could otherwise pin a field meant to repeat —
+    // permanently, breaking the app's own inserts.
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await client().upsert('users', [{ email: 'a' }], ['email'], false, true)
+    assert.equal(bodyOf(calls[0]).create_unique, true)
+    await client().insert('users', [{ email: 'a' }], ['email'], true)
+    assert.equal(calls[1].url, 'https://gateway.example/v1/proj/users?unique=email&create_unique=true')
   })
 
   it('declares unique fields on insert as a query parameter', async () => {
     const calls = stub({ body: { rows: [], count: 0 } })
     await client().insert('users', [{ email: 'a' }], ['email'])
-    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/users?unique=email')
+    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/users?unique=email&create_unique=false')
+    await client().insert('users', [{ email: 'a' }])
+    assert.equal(calls[1].url, 'https://gateway.example/v1/proj/users')
   })
 })

@@ -170,27 +170,38 @@ export class CradlerClient {
     })
   }
 
-  /** `POST /{collection}` — insert one or more rows. `unique` fields are
-   *  made unique in the collection (first use), so duplicates get a 409. */
-  insert(collection: string, rows: Row[], unique?: string[]): Promise<ResultSet> {
+  /** `POST /{collection}` — insert one or more rows. Duplicates of `unique`
+   *  fields get a 409. Those fields must already be unique unless
+   *  `createUnique` is set — making them so is permanent. */
+  insert(
+    collection: string,
+    rows: Row[],
+    unique?: string[],
+    createUnique = false,
+  ): Promise<ResultSet> {
     const query = unique?.length
-      ? `?unique=${encodeURIComponent(unique.join(','))}`
+      ? `?unique=${encodeURIComponent(unique.join(','))}` +
+        `&create_unique=${createUnique}`
       : ''
     return this.request<ResultSet>('POST', `/${enc(collection)}${query}`, rows)
   }
 
   /** `POST /{collection}/upsert` — insert, or update the stored row with the
-   *  same `onConflict` values (default `id`). */
+   *  same `onConflict` values (default `id`). Unlike the SDK, this never makes
+   *  fields unique unless `createUnique` is set: an agent working on live
+   *  data could otherwise pin a field that is meant to repeat, permanently. */
   upsert(
     collection: string,
     rows: Row[],
     onConflict?: string[],
     ignoreDuplicates?: boolean,
+    createUnique = false,
   ): Promise<ResultSet> {
     return this.request<ResultSet>('POST', `/${enc(collection)}/upsert`, {
       rows,
       ...(onConflict?.length ? { on_conflict: onConflict } : {}),
       ...(ignoreDuplicates ? { ignore_duplicates: true } : {}),
+      create_unique: createUnique,
     })
   }
 

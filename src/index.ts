@@ -70,6 +70,17 @@ const orderShape = z.object({
   desc: z.boolean().describe('Sort descending when true, ascending when false.'),
 })
 
+/** Making fields unique is permanent (no self-serve undo) and changes how
+ *  the app's own inserts behave, so the agent has to opt in, and is told
+ *  when that is appropriate. */
+const CREATE_UNIQUE_HELP =
+  'Allow this call to make the fields unique if they are not yet. ' +
+  'PERMANENT: from then on every insert of a duplicate value fails — ' +
+  "including the app's own inserts — and it cannot be undone by the user. " +
+  'Set it only for values that must never repeat (emails, external ids, ' +
+  'idempotency keys), and only when the user asked for that; never for ' +
+  'names, titles, statuses or dates. Default false.'
+
 /** A tool result containing a pretty-printed JSON payload. */
 function ok(payload: unknown) {
   return {
@@ -107,7 +118,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: 'cradler-mcp',
-    version: '0.4.0',
+    version: '0.4.1',
   })
 
   server.registerTool(
@@ -312,14 +323,18 @@ async function main(): Promise<void> {
           .array(z.string())
           .optional()
           .describe(
-            'Fields that must not repeat across rows (together, if several). ' +
-              'The first insert naming them makes them unique for good; a ' +
-              'duplicate then fails with constraint_violation (409).',
+            'Fields that must not repeat (together, if several); a duplicate ' +
+              'fails with constraint_violation (409). They must already be ' +
+              'unique unless createUnique is true.',
           ),
+        createUnique: z
+          .boolean()
+          .optional()
+          .describe(CREATE_UNIQUE_HELP),
       },
     },
-    ({ collection, rows, unique }) =>
-      guard(() => cradler.insert(collection, rows, unique)),
+    ({ collection, rows, unique, createUnique }) =>
+      guard(() => cradler.insert(collection, rows, unique, createUnique)),
   )
 
   server.registerTool(
@@ -329,9 +344,9 @@ async function main(): Promise<void> {
       description:
         'Insert each row, or update the stored row that has the same ' +
         '`onConflict` values (default ["id"]). A row updates only the fields ' +
-        'it includes. The first upsert on a field makes it unique in the ' +
-        'collection; if the collection already holds duplicates of it, the ' +
-        'call fails with constraint_violation and says how many. Use this ' +
+        'it includes. The onConflict fields must already be unique in the ' +
+        'collection (`id` always is); if they are not, the call fails and ' +
+        'says so — set createUnique only as the error describes. Use this ' +
         'instead of query-then-insert, which races.',
       inputSchema: {
         collection: z.string().describe('Name of the collection.'),
@@ -352,10 +367,16 @@ async function main(): Promise<void> {
             'Keep a stored row unchanged (it is still returned) instead of ' +
               'updating it — "insert unless it already exists".',
           ),
+        createUnique: z
+          .boolean()
+          .optional()
+          .describe(CREATE_UNIQUE_HELP),
       },
     },
-    ({ collection, rows, onConflict, ignoreDuplicates }) =>
-      guard(() => cradler.upsert(collection, rows, onConflict, ignoreDuplicates)),
+    ({ collection, rows, onConflict, ignoreDuplicates, createUnique }) =>
+      guard(() =>
+        cradler.upsert(collection, rows, onConflict, ignoreDuplicates, createUnique),
+      ),
   )
 
   server.registerTool(
