@@ -216,3 +216,49 @@ describe('validation errors', () => {
     )
   })
 })
+
+describe('aggregate', () => {
+  it('posts the aggregate DSL to the collection', async () => {
+    const calls = stub({ body: { rows: [{ status: 'paid', count: 1200 }], count: 1 } })
+    const result = await client().aggregate('orders', {
+      aggregates: [{ fn: 'count' }, { fn: 'sum', field: 'amount', as: 'revenue' }],
+      groupBy: ['status'],
+      filters: [{ field: 'region', op: 'eq', value: 'eu' }],
+      count: 'exact',
+    })
+    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/orders/aggregate')
+    assert.deepEqual(bodyOf(calls[0]), {
+      aggregates: [{ fn: 'count' }, { fn: 'sum', field: 'amount', as: 'revenue' }],
+      group_by: ['status'],
+      filters: [{ field: 'region', op: 'eq', value: 'eu' }],
+      order: [],
+      count: 'exact',
+    })
+    assert.equal(result.rows[0].count, 1200)
+  })
+
+  it('refuses a filter without a value, like every other read', async () => {
+    const calls = stub({ body: { rows: [], count: 0 } })
+    await assert.rejects(
+      () =>
+        client().aggregate('orders', {
+          aggregates: [{ fn: 'count' }],
+          filters: [{ field: 'status', op: 'neq' }],
+        }),
+      (err: unknown) => err instanceof CradlerError && err.code === 'invalid_filter',
+    )
+    assert.equal(calls.length, 0)
+  })
+})
+
+describe('listCollections', () => {
+  it('GETs the project collection list', async () => {
+    const calls = stub({
+      body: { collections: [{ collection: 'orders', columns: { id: 'uuid' } }] },
+    })
+    const result = await client().listCollections()
+    assert.equal(calls[0].init.method, 'GET')
+    assert.equal(calls[0].url, 'https://gateway.example/v1/proj/collections')
+    assert.equal(result.collections[0].collection, 'orders')
+  })
+})

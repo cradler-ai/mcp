@@ -107,17 +107,30 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: 'cradler-mcp',
-    version: '0.2.1',
+    version: '0.3.0',
   })
+
+  server.registerTool(
+    'list_collections',
+    {
+      title: 'List collections',
+      description:
+        'List every collection (table) in the Cradler project with its ' +
+        'columns (name -> type). Call this first to find out which ' +
+        'collections exist and what their exact column names are. With an ' +
+        'anon key, only the collections that key may read are listed.',
+      inputSchema: {},
+    },
+    () => guard(() => cradler.listCollections()),
+  )
 
   server.registerTool(
     'get_schema',
     {
       title: 'Get collection schema',
       description:
-        'Return the columns (name -> type) of a Cradler collection. ' +
-        'Call this first to discover the exact column names before querying ' +
-        'or writing data.',
+        'Return the columns (name -> type) of one Cradler collection. Use ' +
+        'list_collections instead when you do not know the collection name.',
       inputSchema: {
         collection: z.string().describe('Name of the collection (table).'),
       },
@@ -180,6 +193,99 @@ async function main(): Promise<void> {
           order,
           select,
           limit: limit ?? 100,
+          offset,
+          count: countTotal ? 'exact' : undefined,
+        }),
+      ),
+  )
+
+  server.registerTool(
+    'aggregate',
+    {
+      title: 'Aggregate rows',
+      description:
+        'Compute count / sum / avg / min / max in the database over EVERY ' +
+        'matching row of a Cradler collection, optionally grouped by one or ' +
+        'more fields. Use this for any statistic ("how many", "total", ' +
+        '"average", "per status") instead of computing it from `query` ' +
+        'results, which are capped at 1000 rows and would be wrong for ' +
+        'larger collections. Each result row holds the group_by fields plus ' +
+        'one key per aggregate (its `as`, or `count` / `<fn>_<field>`). ' +
+        'sum and avg need a numeric field; min and max a number, text, date ' +
+        'or time.',
+      inputSchema: {
+        collection: z.string().describe('Name of the collection to aggregate.'),
+        aggregates: z
+          .array(
+            z.object({
+              fn: z
+                .enum(['count', 'sum', 'avg', 'min', 'max'])
+                .describe('Aggregate function.'),
+              field: z
+                .string()
+                .optional()
+                .describe(
+                  'Column to aggregate. Required except for count, which ' +
+                    'without a field counts rows.',
+                ),
+              as: z
+                .string()
+                .optional()
+                .describe(
+                  'Result key (snake_case). Defaults to `count` or `<fn>_<field>`, e.g. `sum_amount`.',
+                ),
+            }),
+          )
+          .min(1)
+          .describe('The values to compute.'),
+        groupBy: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Fields to group by — one result row per distinct combination. ' +
+              'Omit for a single row over all matching rows.',
+          ),
+        filters: z
+          .array(filterShape)
+          .optional()
+          .describe('Filters applied before aggregating; all must match (AND).'),
+        order: z
+          .array(orderShape)
+          .optional()
+          .describe(
+            'Sort the groups by a groupBy field or an aggregate key. ' +
+              'Defaults to the groupBy fields.',
+          ),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(1000)
+          .optional()
+          .describe(
+            'Maximum groups to return (1–1000, default 100). Does not limit ' +
+              'the rows that are aggregated.',
+          ),
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Number of groups to skip, for paging.'),
+        countTotal: z
+          .boolean()
+          .optional()
+          .describe('Also return `total`: how many groups there are in all.'),
+      },
+    },
+    ({ collection, aggregates, groupBy, filters, order, limit, offset, countTotal }) =>
+      guard(() =>
+        cradler.aggregate(collection, {
+          aggregates,
+          groupBy,
+          filters,
+          order,
+          limit,
           offset,
           count: countTotal ? 'exact' : undefined,
         }),

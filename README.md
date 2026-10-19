@@ -4,8 +4,9 @@ An [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server that
 lets AI agents — Claude Desktop, Cursor, Claude Code, and any other MCP client —
 read and write the data in a single [Cradler](https://cradler.ai) project.
 
-It runs over **stdio** and exposes five tools backed by the Cradler data
-gateway: `get_schema`, `query`, `insert`, `update` and `delete`.
+It runs over **stdio** and exposes seven tools backed by the Cradler data
+gateway: `list_collections`, `get_schema`, `query`, `aggregate`, `insert`,
+`update` and `delete`.
 
 ## Configuration
 
@@ -74,17 +75,19 @@ the built file directly:
 
 ## Tools
 
-| Tool         | What it does                                                                    |
-| ------------ | ------------------------------------------------------------------------------- |
-| `get_schema` | Return a collection's columns (name → type). Use it to discover column names.    |
-| `query`      | Read rows with optional filters, sorting, column projection and paging.         |
-| `insert`     | Insert one or more rows. New collections and columns are created automatically. |
-| `update`     | Patch every row matching the given filters (filters required).                  |
-| `delete`     | Delete every row matching the given filters (filters required — never the lot).  |
+| Tool               | What it does                                                                    |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `list_collections` | List every collection with its columns. Use it to discover what exists.         |
+| `get_schema`       | Return one collection's columns (name → type).                                  |
+| `query`            | Read rows with optional filters, sorting, column projection and paging.         |
+| `aggregate`        | count / sum / avg / min / max over every matching row, optionally grouped.      |
+| `insert`           | Insert one or more rows. New collections and columns are created automatically. |
+| `update`           | Patch every row matching the given filters (filters required).                  |
+| `delete`           | Delete every row matching the given filters (filters required — never the lot). |
 
 ### Filters
 
-`query`, `update` and `delete` accept filter objects of the form
+`query`, `aggregate`, `update` and `delete` accept filter objects of the form
 `{ field, op, value }`. Valid operators:
 
 `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is_null`.
@@ -94,8 +97,30 @@ other operator requires a `value` — a filter without one is rejected rather
 than silently matching nulls.
 
 `query` defaults to a `limit` of 100 rows (maximum 1000) so large tables are
-not pulled in full. `update` and `delete` require a non-empty `filters` array — there is no
-way to update or delete an entire collection in one call.
+not pulled in full. Because of that cap, never compute a statistic from
+`query` rows — use `aggregate`, which runs in the database over every matching
+row:
+
+```json
+{
+  "collection": "orders",
+  "groupBy": ["status"],
+  "aggregates": [
+    { "fn": "count" },
+    { "fn": "sum", "field": "amount", "as": "revenue" }
+  ],
+  "filters": [{ "field": "created_at", "op": "gte", "value": "2026-01-01" }]
+}
+```
+
+Each result row holds the `groupBy` fields plus one key per aggregate — its
+`as`, or `count` / `<fn>_<field>` (`sum_amount`) by default. `sum` and `avg`
+need a numeric field; `min` and `max` a number, text, date or time. `limit`
+(default 100, max 1000) caps the number of groups returned, not the rows
+aggregated.
+
+`update` and `delete` require a non-empty `filters` array — there is no way
+to update or delete an entire collection in one call.
 
 ## Development
 

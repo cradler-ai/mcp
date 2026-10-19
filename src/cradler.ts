@@ -49,6 +49,28 @@ export interface SchemaResult {
   columns: Record<string, string>
 }
 
+export type AggregateFn = 'count' | 'sum' | 'avg' | 'min' | 'max'
+
+export interface Aggregate {
+  fn: AggregateFn
+  /** Required except for `count`, which without a field counts rows. */
+  field?: string
+  /** Result key; defaults to `count` or `<fn>_<field>`. */
+  as?: string
+}
+
+export interface AggregateArgs {
+  aggregates: Aggregate[]
+  groupBy?: string[]
+  filters?: Filter[]
+  /** By a group_by field or an aggregate key. */
+  order?: OrderBy[]
+  limit?: number
+  offset?: number
+  /** `'exact'` also returns `total`, the number of groups. */
+  count?: 'exact'
+}
+
 export interface QueryArgs {
   select?: string[]
   filters?: Filter[]
@@ -110,6 +132,11 @@ export class CradlerClient {
     this.apiKey = options.apiKey
   }
 
+  /** `GET /collections` — every collection the key may read, with columns. */
+  listCollections(): Promise<{ collections: SchemaResult[] }> {
+    return this.request<{ collections: SchemaResult[] }>('GET', '/collections')
+  }
+
   /** `GET /{collection}/schema` — the collection's current columns. */
   getSchema(collection: string): Promise<SchemaResult> {
     return this.request<SchemaResult>('GET', `/${enc(collection)}/schema`)
@@ -120,6 +147,21 @@ export class CradlerClient {
     checkFilters(args.filters ?? [])
     return this.request<ResultSet>('POST', `/${enc(collection)}/query`, {
       select: args.select,
+      filters: args.filters ?? [],
+      order: args.order ?? [],
+      limit: args.limit,
+      offset: args.offset,
+      ...(args.count !== undefined ? { count: args.count } : {}),
+    })
+  }
+
+  /** `POST /{collection}/aggregate` — count / sum / avg / min / max over
+   *  every matching row, optionally per group. */
+  async aggregate(collection: string, args: AggregateArgs): Promise<ResultSet> {
+    checkFilters(args.filters ?? [])
+    return this.request<ResultSet>('POST', `/${enc(collection)}/aggregate`, {
+      aggregates: args.aggregates,
+      group_by: args.groupBy ?? [],
       filters: args.filters ?? [],
       order: args.order ?? [],
       limit: args.limit,
